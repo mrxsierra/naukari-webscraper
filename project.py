@@ -1,14 +1,15 @@
+import math
+import re
+import sys
+from time import sleep
+
 import pandas as pd
 from selenium import webdriver
-from selenium.webdriver.common.keys import Keys
-from selenium.webdriver.common.by import By
-from selenium.webdriver.support.ui import WebDriverWait
-from selenium.webdriver.support import expected_conditions as EC
 from selenium.common.exceptions import NoSuchElementException
-from time import sleep
-import math
-import sys
-import re
+from selenium.webdriver.common.by import By
+from selenium.webdriver.common.keys import Keys
+from selenium.webdriver.support import expected_conditions as EC
+from selenium.webdriver.support.ui import WebDriverWait
 
 
 def main():
@@ -16,7 +17,7 @@ def main():
     Main function to orchestrate the web scraping and data processing.
     """
     jobs = get_job_listings()
-    print(f"Total job Post = {len(jobs)}\n 'job_listings.csv' File Saved Sucessfully..")
+    print(f"Total job Post = {len(jobs)}\n 'job_listings.csv' File Saved Successfully.")
 
     csv = "job_listings.csv"
     write_to_csv(jobs, csv)
@@ -78,7 +79,7 @@ def filter_by_skills(df):
         for key, value in row.items():
             print(f"{key}: {value}")
         print()
-    print("------------------------ Press 'cntrl+c' to exit -----------------------\n")
+    print("------------------------ Press 'ctrl+c' to exit -----------------------\n")
 
 
 def get_text_or_default(element, selector, default="N/A"):
@@ -111,6 +112,38 @@ def write_to_csv(jobs, csv):
     df.to_csv(csv, index=False)
 
 
+def get_total_pages(res):
+    page = math.floor(int(res[(res.find("f")) + 2 :]) / 20)
+    return max(page, 1)
+
+
+def prompt_user_for_pages_and_pause(default_page):
+    print(
+        f"total number of page for keyword is {default_page}\n"
+        f"**Note: some keywords may contain less page result or even '0'\n"
+        f"------------------------------------------------------------------"
+    )
+    while True:
+        try:
+            input_page = input(
+                "Input number of page to scrap (Recommend: less than '5'): "
+            )
+            if input_page.isnumeric():
+                break
+        except ValueError:
+            continue
+    page = int(input_page)
+    while True:
+        try:
+            pause_t = int(input("input pause time (in seconds) b/w pages: "))
+            break
+        except ValueError:
+            continue
+    if pause_t < 1:
+        pause_t = 1
+    return page, pause_t
+
+
 def get_job_listings():
     """
     Get job listings from naukri.com using web scraping.
@@ -120,42 +153,31 @@ def get_job_listings():
     """
     options = webdriver.ChromeOptions()
     options.add_argument("--headless=new")
+    options.add_argument(
+        "user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+        "AppleWebKit/537.36 (KHTML, like Gecko) "
+        "Chrome/122.0.0.0 Safari/537.36"
+    )
 
     with webdriver.Chrome(options=options) as driver:
         wait = WebDriverWait(driver, 10)
         url = get_input_url(wait, driver)
-        res = wait.until(
-            EC.presence_of_element_located(
-                (By.CSS_SELECTOR, "span.fleft.count-string.mr-5.fs12")
-            )
-        ).text
-        page = math.floor(int(res[(res.find("f")) + 2 :]) / 20)
-        if page < 1:
-            page = 1
-        else:
-            print(
-                f"total number of page for keyword is {page}\n**Note: some keywords may contain less page result or even '0'\n------------------------------------------------------------------"
-            )
-            while True:
-                try:
-                    input_page = input(
-                        "Input number of page to scrap (Recommend: less than '5'): "
+        try:
+            res = wait.until(
+                EC.presence_of_element_located(
+                    (
+                        By.CSS_SELECTOR,
+                        ".styles_h1-wrapper__mHVA1 .styles_count-string__DlPaZ",
                     )
-                    if input_page.isnumeric():
-                        break
-                    else:
-                        continue
-                except ValueError:
-                    continue
-            page = int(input_page)
-            while True:
-                try:
-                    pause_t = int(input("input pause time (in seconds) b/w pages: "))
-                    break
-                except ValueError:
-                    continue
-            if pause_t == None or pause_t < 1:
-                pause_t = 1
+                )
+            ).text
+        except NoSuchElementException as e:
+            print("element not found", e)
+
+        page = get_total_pages(res)
+        pause_t = 1
+        if page > 1:
+            page, pause_t = prompt_user_for_pages_and_pause(page)
 
         job_listings = []
 
@@ -184,34 +206,27 @@ def get_article(driver):
     """
     job_article_list = []
 
-    articles = driver.find_elements(By.TAG_NAME, "article")
+    try:
+        articles = driver.find_elements(
+            By.XPATH, "//div[contains(@class, 'srp-jobtuple-wrapper')]"
+        )
+    except NoSuchElementException as e:
+        print("element not found", e)
 
     for article in articles:
         try:
-            title = get_text_or_default(article, "a.title.ellipsis")
-            ref = article.find_element(
-                By.CSS_SELECTOR, "a.title.ellipsis"
-            ).get_attribute("href")
-            company = get_text_or_default(article, "a.subTitle.ellipsis.fleft")
-            experience = get_text_or_default(
-                article, "ul li.fleft.br2.placeHolderLi.experience"
+            title = get_text_or_default(article, "a.title")
+            ref = article.find_element(By.CSS_SELECTOR, "a.title").get_attribute("href")
+            company = get_text_or_default(article, "a.comp-name")
+            experience = get_text_or_default(article, "span.expwdth")
+            # duration = get_text_or_default(article, "span.duration") # not available
+            salary = get_text_or_default(article, "span.sal-wrap")
+            location = get_text_or_default(article, "span.locwdth")
+            job_description = get_text_or_default(article, "span.job-desc")
+            skills_req = get_text_or_default(article, "ul.tags-gt", default="").split(
+                "\n"
             )
-            duration = get_text_or_default(
-                article, "ul li.fleft.br2.placeHolderLi.duration"
-            )
-            salary = get_text_or_default(
-                article, "ul li.fleft.br2.placeHolderLi.salary"
-            )
-            location = get_text_or_default(
-                article, "ul li.fleft.br2.placeHolderLi.location"
-            )
-            job_description = get_text_or_default(
-                article, "div.ellipsis.job-description"
-            )
-            skills_req = get_text_or_default(
-                article, "ul.tags.has-description", default=""
-            ).split("\n")
-            post_date = get_text_or_default(article, "span.fleft.postedDate")
+            post_date = get_text_or_default(article, "span.job-post-day")
 
             job_listing = {
                 "Title": title,
@@ -223,7 +238,7 @@ def get_article(driver):
                 "Job Description": job_description,
                 "Skills Required": skills_req,
                 "Posted Date": post_date,
-                "Duration": duration,
+                # "Duration": duration,
             }
             job_article_list.append(job_listing)
 
@@ -244,7 +259,11 @@ def get_input_url(wait, driver):
         str: The URL to start the web scraping from.
     """
     print(
-        "------------------------------------------------------------------\n**Help: If not respond within '30 seconds', Terminate manually by pressing 'ctrl + c'.\n**Note: Make sure internet is working\n------------------------------------------------------------------"
+        "------------------------------------------------------------------\n"
+        "**Help: If not respond within '30 seconds',"
+        "Terminate manually by pressing 'ctrl + c'.\n"
+        "**Note: Make sure internet is working\n"
+        "------------------------------------------------------------------"
     )
     while True:
         try:
@@ -256,12 +275,22 @@ def get_input_url(wait, driver):
         except ValueError:
             continue
     print(
-        "=================================wait=============================\nMessage: Scraping is in Process...........\nMessage: It may take time based on the number of posts it finds....\n**Note: If you see 'site links and total post', means everything is 'fine', \n   -- other than this, there may be a bug in the code you can start debugging code by first looking into 'webdriver' and 'dependencies'**\n=================================================================="
+        "=================================wait=============================\n"
+        "Message: Scraping is in Process...........\n"
+        "Message: It may take time based on the number of posts it finds....\n"
+        "**Note: If you see 'site links and total post', means everything is 'fine', \n"
+        "   -- other than this, there may be a bug in the code"
+        "   -- you can start debugging code by "
+        "   -- first looking into 'webdriver' and 'dependencies'**\n"
+        "=================================================================="
     )
     driver.get("https://www.naukri.com/")
-    search_field = wait.until(
-        EC.presence_of_element_located((By.CSS_SELECTOR, "input.suggestor-input"))
-    )
+    try:
+        search_field = wait.until(
+            EC.presence_of_element_located((By.CSS_SELECTOR, "input.suggestor-input"))
+        )
+    except NoSuchElementException as e:
+        print("element not found", e)
     search_field.send_keys(job)
     search_field.send_keys(Keys.ENTER)
     url = driver.current_url

@@ -1,0 +1,17 @@
+[project]
+name = "naukri-webscrapper"
+version = "0.1.0"
+description = "Add your description here"
+authors = [
+    { name = "mrxsierra", email = "sunilsharma9@outlook.com" }
+]
+requires-python = ">=3.13"
+dependencies = [
+    "pandas>=2.0.3",
+    "selenium>=4.11.2",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=8.3.5",
+]

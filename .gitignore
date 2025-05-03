@@ -1,0 +1,10 @@
+# dir
+__pycache__
+.pytest_cache/*
+.venv/*
+.vscode/*
+
+# file
+*.png 
+*.python-version
+*.*cache 
